@@ -247,7 +247,7 @@ namespace NativeRIOHttpServer.RegisteredIO
 
     }
 
-    public sealed class ReceiveTask : INotifyCompletion
+    public sealed class ReceiveTask : INotifyCompletion, ICriticalNotifyCompletion
     {
         private readonly static Action CALLBACK_RAN = () => { };
         private bool _isCompleted;
@@ -287,14 +287,14 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         public bool IsCompleted { get { return _isCompleted; } }
 
+        private void UnsafeCallback(object state)
+        {
+            ((Action)state)();
+        }
+
         public void OnCompleted(Action continuation)
         {
-            if (_continuation == CALLBACK_RAN ||
-                    Interlocked.CompareExchange(
-                        ref _continuation, continuation, null) == CALLBACK_RAN)
-            {
-                Task.Run(continuation);
-            }
+            throw new NotImplementedException();
         }
         public uint GetResult()
         {
@@ -308,9 +308,18 @@ namespace NativeRIOHttpServer.RegisteredIO
         {
             if (!disposedValue)
             {
-
-
                 disposedValue = true;
+            }
+        }
+
+        [System.Security.SecurityCritical]
+        public void UnsafeOnCompleted(Action continuation)
+        {
+            if (_continuation == CALLBACK_RAN ||
+                    Interlocked.CompareExchange(
+                        ref _continuation, continuation, null) == CALLBACK_RAN)
+            {
+                ThreadPool.UnsafeQueueUserWorkItem(UnsafeCallback, continuation);
             }
         }
         #endregion
