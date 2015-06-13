@@ -40,7 +40,7 @@ namespace NativeRIOHttpServer.RegisteredIO
     public class RIOBufferPool : IDisposable
     {
         RIO_BUFSEGMENT[] _segments;
-        private byte[] _underlyingBuffer; // temp 
+        private byte[] _underlyingBuffer;
         public const int PacketSize = 1500 - (20 + 60); // MTU - (IP Header + TCP Header)
         private const int PerAllocationCount = 8192;
         private const int BufferLength = PacketSize * PerAllocationCount; // Amount to pin per alloc 9.4 MB ish; into LOH
@@ -62,13 +62,18 @@ namespace NativeRIOHttpServer.RegisteredIO
             _allocatedBuffers = new ConcurrentQueue<AllocatedBuffer>();
             _availableSegments = new ConcurrentQueue<int>();
 
-            var underlyingBuffer = new byte[BufferLength];
-            var pinnedBuffer = GCHandle.Alloc(underlyingBuffer, GCHandleType.Pinned);
-            var address = Marshal.UnsafeAddrOfPinnedArrayElement(underlyingBuffer, 0);
-            var bufferId = _rio.RegisterBuffer(address, BufferLength);
-            _underlyingBuffer = underlyingBuffer;
+            _underlyingBuffer = new byte[BufferLength];
+            
+        }
 
-            _allocatedBuffers.Enqueue(new AllocatedBuffer() { Buffer = underlyingBuffer, PinnedBuffer = pinnedBuffer, BufferId = bufferId });
+        public void Initalize()
+        {
+
+            var pinnedBuffer = GCHandle.Alloc(_underlyingBuffer, GCHandleType.Pinned);
+            var address = Marshal.UnsafeAddrOfPinnedArrayElement(_underlyingBuffer, 0);
+            var bufferId = _rio.RegisterBuffer(address, BufferLength);
+
+            _allocatedBuffers.Enqueue(new AllocatedBuffer() { Buffer = _underlyingBuffer, PinnedBuffer = pinnedBuffer, BufferId = bufferId });
 
             _segments = new RIO_BUFSEGMENT[PerAllocationCount];
             _availableSegments = new ConcurrentQueue<int>();
@@ -79,6 +84,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                 _availableSegments.Enqueue(i);
                 offset += PacketSize;
             }
+
         }
 
         public PooledSegment GetBuffer()

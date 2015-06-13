@@ -27,7 +27,6 @@ namespace NativeRIOHttpServer.RegisteredIO
         public RIOImports.RIOResizeCompletionQueue ResizeCompletionQueue;
         public RIOImports.RIOResizeRequestQueue ResizeRequestQueue;
 
-        public RIOBufferPool bufferPool;
 
         public RIO()
         {
@@ -147,7 +146,6 @@ namespace NativeRIOHttpServer.RegisteredIO
                 rioFunctions.ResizeCompletionQueue = Marshal.GetDelegateForFunctionPointer<RIOResizeCompletionQueue>(rio.RIOResizeCompletionQueue);
                 rioFunctions.ResizeRequestQueue = Marshal.GetDelegateForFunctionPointer<RIOResizeRequestQueue>(rio.RIOResizeRequestQueue);
 
-                rioFunctions.bufferPool = new RIOBufferPool(rioFunctions);
                 return rioFunctions;
             }
         }

@@ -140,6 +140,7 @@ namespace NativeRIOHttpServer.RegisteredIO
         IntPtr _socket;
         IntPtr _requestQueue;
         RIO _rio;
+        WorkBundle _wb;
 
         long _sendCount = 0;
         long _receiveCount = 0;
@@ -149,6 +150,7 @@ namespace NativeRIOHttpServer.RegisteredIO
             _socket = socket;
             _connectionId = connectionId;
             _rio = rio;
+            _wb = wb;
 
             _requestQueue = _rio.CreateRequestQueue(_socket, 10, 1, 100, 1, wb.completionQueue, wb.completionQueue, connectionId);
             if (_requestQueue == IntPtr.Zero)
@@ -158,7 +160,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                 throw new Exception(String.Format("ERROR: CreateRequestQueue returned {0}", error));
             }
 
-            _receiveTask = new ReceiveTask(_rio.bufferPool.GetBuffer());
+            _receiveTask = new ReceiveTask(wb.bufferPool.GetBuffer());
             wb.connections.TryAdd(connectionId, this);
         }
 
@@ -174,7 +176,7 @@ namespace NativeRIOHttpServer.RegisteredIO
 
             while (count > 0 && !cancellationToken.IsCancellationRequested)
             {
-                var segment = _rio.bufferPool.GetBuffer();
+                var segment = _wb.bufferPool.GetBuffer();
 
                 var length = count >= RIOBufferPool.PacketSize ? RIOBufferPool.PacketSize : count;
 

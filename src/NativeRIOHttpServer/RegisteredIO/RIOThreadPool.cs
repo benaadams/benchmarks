@@ -10,7 +10,7 @@ using System.Threading.Tasks;
 
 namespace NativeRIOHttpServer.RegisteredIO
 {
-    internal unsafe struct WorkBundle
+    internal unsafe class WorkBundle
     {
         public int id;
         public IntPtr completionPort;
@@ -18,6 +18,8 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         public ConcurrentDictionary<long, TcpConnection> connections;
         public Thread thread;
+
+        public RIOBufferPool bufferPool;
     }
 
     internal class RIOThreadPool
@@ -44,9 +46,13 @@ namespace NativeRIOHttpServer.RegisteredIO
             _maxThreads = Environment.ProcessorCount;
 
             _workers = new WorkBundle[_maxThreads];
-            for (var i = 0; i < _maxThreads; i++)
+            for (var i = 0; i < _workers.Length; i++)
             {
-                var worker = new WorkBundle() { id = i };
+                var worker = new WorkBundle()
+                {
+                    id = i,
+                    bufferPool = new RIOBufferPool(_rio)
+                };
                 worker.completionPort = CreateIoCompletionPort(INVALID_HANDLE_VALUE, IntPtr.Zero, 0, 0);
 
                 if (worker.completionPort == IntPtr.Zero)
@@ -76,10 +82,26 @@ namespace NativeRIOHttpServer.RegisteredIO
                 }
 
                 worker.connections = new ConcurrentDictionary<long, TcpConnection>();
-                _workers[i] = worker;
                 worker.thread = new Thread(GetThreadStart(i));
                 worker.thread.IsBackground = true;
-                worker.thread.Start();
+                _workers[i] = worker;
+            }
+
+            // gc
+            GC.Collect(2, GCCollectionMode.Forced, true, true);
+            GC.WaitForPendingFinalizers();
+            GC.Collect(2, GCCollectionMode.Forced, true, true);
+
+            for (var i = 0; i < _workers.Length; i++)
+            {
+                // pin buffers
+                _workers[i].bufferPool.Initalize();
+            }
+
+
+            for (var i = 0; i < _workers.Length; i++)
+            {
+                _workers[i].thread.Start();
             }
         }
         private ThreadStart GetThreadStart(int i)
@@ -117,7 +139,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                         result = results[i];
                         if (result.RequestCorrelation < 1)
                         {
-                            _rio.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
+                            worker.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
                         }
                         else
                         {
@@ -150,9 +172,9 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         [DllImport(Kernel_32, SetLastError = true), SuppressUnmanagedCodeSecurity]
         private static extern unsafe bool GetQueuedCompletionStatus(IntPtr CompletionPort, out uint lpNumberOfBytes, out uint lpCompletionKey, out NativeOverlapped* lpOverlapped, int dwMilliseconds);
-        
+
         [DllImport(Kernel_32, SetLastError = true), SuppressUnmanagedCodeSecurity]
         private static extern long GetLastError();
-        
+
     }
 }

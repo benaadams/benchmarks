@@ -1,16 +1,17 @@
 ﻿{
-  "version": "1.0.0-*",
+	"version": "1.0.0-*",
 
-  "dependencies": {
-  },
-  "compilationOptions": {
-    "allowUnsafe": true
-  },
-  "commands": {
-    "NativeRIOHttpServer": "NativeRIOHttpServer"
-  },
+	"dependencies": {
+	},
+	"compilationOptions": {
+		"allowUnsafe": true,
+		"optimize": true
+	},
+	"commands": {
+		"NativeRIOHttpServer": "NativeRIOHttpServer"
+	},
 
-  "frameworks": {
-    "dnx451": { }
-  }
+	"frameworks": {
+		"dnx46": { }
+	}
 }
