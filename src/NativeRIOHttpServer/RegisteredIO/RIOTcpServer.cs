@@ -221,7 +221,10 @@ namespace NativeRIOHttpServer.RegisteredIO
                 {
                     //_receiveTask.Dispose();
                 }
-                _rio.CloseCompletionQueue(_requestQueue);
+                // Makes it unhappy
+                // _rio.CloseCompletionQueue(_requestQueue);
+
+
                 RIOImports.closesocket(_socket);
 
                 disposedValue = true;
