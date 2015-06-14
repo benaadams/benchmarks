@@ -61,7 +61,8 @@ namespace NativeRIOHttpServer
                     //    x += buffer[i];
                     //}
 
-                    socket.SendQueue(sendBuffer);
+                    //socket.SendQueue(sendBuffer);
+                    socket.SendCachedOk();
                 }
             }
             catch (Exception ex)
