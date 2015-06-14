@@ -143,7 +143,13 @@ namespace NativeRIOHttpServer.RegisteredIO
         WorkBundle _wb;
 
         long _sendCount = 0;
-        long _receiveCount = 0;
+        long _receiveRequestCount = 0;
+
+        ReceiveTask[] _receiveTasks;
+        ArraySegment<byte>[] _receiveRequestBuffers;
+        public const int MaxPendingReceives = 64;
+        public const int MaxPendingSends = MaxPendingReceives * 2;
+        const int ReceiveMask = MaxPendingReceives - 1;
 
         internal TcpConnection(IntPtr socket, long connectionId, WorkBundle wb, RIO rio)
         {
@@ -152,7 +158,7 @@ namespace NativeRIOHttpServer.RegisteredIO
             _rio = rio;
             _wb = wb;
 
-            _requestQueue = _rio.CreateRequestQueue(_socket, 10, 1, 100, 1, wb.completionQueue, wb.completionQueue, connectionId);
+            _requestQueue = _rio.CreateRequestQueue(_socket, MaxPendingReceives, 1, MaxPendingSends, 1, wb.completionQueue, wb.completionQueue, connectionId);
             if (_requestQueue == IntPtr.Zero)
             {
                 var error = RIOImports.WSAGetLastError();
@@ -160,8 +166,19 @@ namespace NativeRIOHttpServer.RegisteredIO
                 throw new Exception(String.Format("ERROR: CreateRequestQueue returned {0}", error));
             }
 
-            _receiveTask = new ReceiveTask(wb.bufferPool.GetBuffer());
+            _receiveTasks = new ReceiveTask[MaxPendingReceives];
+            _receiveRequestBuffers = new ArraySegment<byte>[MaxPendingReceives];
+
+            for (var i = 0; i < _receiveTasks.Length; i++)
+            {
+                _receiveTasks[i] = new ReceiveTask(this, wb.bufferPool.GetBuffer());
+            }
             wb.connections.TryAdd(connectionId, this);
+            
+            for (var i = 0; i < _receiveTasks.Length; i++)
+            {
+                PostReceive( i );
+            }
         }
 
         const RIO_SEND_FLAGS MessagePart = RIO_SEND_FLAGS.DEFER | RIO_SEND_FLAGS.DONT_NOTIFY;
@@ -199,20 +216,25 @@ namespace NativeRIOHttpServer.RegisteredIO
             _rio.Send(_requestQueue, ref _wb.cachedBusy, 1, MessageEnd, RIO.CachedValue);
         }
 
-        ReceiveTask _receiveTask;
         public void CompleteReceive(long RequestCorrelation, uint BytesTransferred)
         {
-            _receiveTask.Complete(BytesTransferred);
+            var receiveIndex = RequestCorrelation & ReceiveMask;
+            var receiveTask = _receiveTasks[receiveIndex];
+            receiveTask.Complete(BytesTransferred, (uint)receiveIndex);
         }
 
+        internal void PostReceive(long receiveIndex)
+        {
+            var receiveTask = _receiveTasks[receiveIndex];
+            _rio.Receive(_requestQueue, ref receiveTask._segment.RioBuffer, 1, RIO_RECEIVE_FLAGS.NONE, receiveIndex);
+        }
 
         public ReceiveTask ReceiveAsync(ArraySegment<byte> buffer, CancellationToken cancellationToken)
         {
-            _receiveTask.Reset(buffer);
-            
-            _rio.Receive(_requestQueue, ref _receiveTask._segment.RioBuffer, 1, RIO_RECEIVE_FLAGS.NONE, 12 );
-            
-            return _receiveTask;
+            var receiveIndex = (Interlocked.Increment(ref _receiveRequestCount) - 1) & ReceiveMask;
+            var receiveTask = _receiveTasks[receiveIndex];
+            receiveTask.SetBuffer(buffer);
+            return receiveTask;
         }
 
         public void Close()
@@ -234,6 +256,10 @@ namespace NativeRIOHttpServer.RegisteredIO
                 // Makes it unhappy
                 // _rio.CloseCompletionQueue(_requestQueue);
 
+                for (var i = 0; i < _receiveTasks.Length; i++)
+                {
+                    _receiveTasks[i].Dispose();
+                }
 
                 RIOImports.closesocket(_socket);
 
@@ -264,33 +290,38 @@ namespace NativeRIOHttpServer.RegisteredIO
         private Action _continuation;
 
         private uint _bytesTransferred;
+        private uint _requestCorrelation;
         private ArraySegment<byte> _buffer;
         internal PooledSegment _segment;
+        private TcpConnection _connection;
 
-        public ReceiveTask(PooledSegment segment)
+        public ReceiveTask(TcpConnection connection, PooledSegment segment)
         {
             _segment = segment;
+            _connection = connection;
         }
 
-        internal void Reset(ArraySegment<byte> buffer)
+        internal void Reset()
         {
-            _buffer = buffer;
             _bytesTransferred = 0;
             _isCompleted = false;
             _continuation = null;
         }
-        internal void Complete(uint bytesTransferred)
+        internal void SetBuffer(ArraySegment<byte> buffer)
+        {
+            _buffer = buffer;
+        }
+        internal void Complete(uint bytesTransferred, uint requestCorrelation)
         {
             _bytesTransferred = bytesTransferred;
-            Buffer.BlockCopy(_segment.Buffer, _segment.Offset, _buffer.Array, _buffer.Offset, (int)bytesTransferred);
-            
+            _requestCorrelation = requestCorrelation;
+            _isCompleted = true;
 
             Action continuation = _continuation ?? Interlocked.CompareExchange( ref _continuation, CALLBACK_RAN, null);
             if (continuation != null)
             {
                 continuation();
             }
-            _isCompleted = true;
         }
 
         public ReceiveTask GetAwaiter() { return this; }
@@ -306,21 +337,6 @@ namespace NativeRIOHttpServer.RegisteredIO
         {
             throw new NotImplementedException();
         }
-        public uint GetResult()
-        {
-            return _bytesTransferred;
-        }
-
-        #region IDisposable Support
-        private bool disposedValue = false; // To detect redundant calls
-
-        internal void Dispose()
-        {
-            if (!disposedValue)
-            {
-                disposedValue = true;
-            }
-        }
 
         [System.Security.SecurityCritical]
         public void UnsafeOnCompleted(Action continuation)
@@ -332,6 +348,27 @@ namespace NativeRIOHttpServer.RegisteredIO
                 ThreadPool.UnsafeQueueUserWorkItem(UnsafeCallback, continuation);
             }
         }
+        public uint GetResult()
+        {
+            var bytesTransferred = _bytesTransferred;
+            Buffer.BlockCopy(_segment.Buffer, _segment.Offset, _buffer.Array, _buffer.Offset, (int)bytesTransferred);
+            Reset();
+            _connection.PostReceive(_requestCorrelation);
+            return bytesTransferred;
+        }
+
+        #region IDisposable Support
+        private bool disposedValue = false; // To detect redundant calls
+
+        internal void Dispose()
+        {
+            if (!disposedValue)
+            {
+                disposedValue = true;
+                _segment.Dispose();
+            }
+        }
+
         #endregion
 
     }

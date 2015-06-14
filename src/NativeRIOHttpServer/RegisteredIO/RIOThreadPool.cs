@@ -31,6 +31,9 @@ namespace NativeRIOHttpServer.RegisteredIO
         private CancellationToken _token;
         private int _maxThreads;
 
+        public const int MaxOpenSocketsPerThread = 64;
+        private const int MaxOutsandingCompletions = (TcpConnection.MaxPendingReceives + TcpConnection.MaxPendingSends) * MaxOpenSocketsPerThread;
+
         private IntPtr _socket;
 
         internal WorkBundle GetWorker(long connetionId)
@@ -75,7 +78,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                         Overlapped = (NativeOverlapped*)(-1)// nativeOverlapped
                     }
                 };
-                worker.completionQueue = _rio.CreateCompletionQueue(1000, completionMethod);
+                worker.completionQueue = _rio.CreateCompletionQueue(MaxOutsandingCompletions, completionMethod);
 
                 if (worker.completionQueue == IntPtr.Zero)
                 {
@@ -171,14 +174,17 @@ namespace NativeRIOHttpServer.RegisteredIO
                         result = results[i];
                         if (result.RequestCorrelation == RIO.CachedValue)
                         {
-                            // cached response, don't release buffer
+                            // cached send response, don't release buffer
                         }
-                        else if (result.RequestCorrelation < 1)
+                        else if (result.RequestCorrelation < 0)
                         {
+                            // first send 2 buffers are cached responses
+                            // so should next have a 0 for a send
                             worker.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
                         }
                         else
                         {
+                            // receive
                             TcpConnection connection;
                             if (worker.connections.TryGetValue(result.ConnectionCorrelation, out connection))
                             {
