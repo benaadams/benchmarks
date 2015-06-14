@@ -31,7 +31,7 @@ namespace NativeRIOHttpServer.RegisteredIO
         private CancellationToken _token;
         private int _maxThreads;
 
-        public const int MaxOpenSocketsPerThread = 64;
+        public const int MaxOpenSocketsPerThread = 512;
         private const int MaxOutsandingCompletions = (TcpConnection.MaxPendingReceives + TcpConnection.MaxPendingSends) * MaxOpenSocketsPerThread;
 
         private IntPtr _socket;
