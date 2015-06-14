@@ -25,6 +25,7 @@ namespace NativeRIOHttpServer
         {
             // TODO: Use safehandles everywhere!
             var ss = new RIOTcpServer(5000, 127, 0, 0, 1);
+            
             ThreadPool.SetMinThreads(100, 100);
 
             while (true)
@@ -60,7 +61,7 @@ namespace NativeRIOHttpServer
                     //    x += buffer[i];
                     //}
 
-                    socket.SendQueue(sendBuffer, CancellationToken.None);
+                    socket.SendQueue(sendBuffer);
                 }
             }
             catch (Exception ex)

@@ -167,14 +167,14 @@ namespace NativeRIOHttpServer.RegisteredIO
         const RIO_SEND_FLAGS MessagePart = RIO_SEND_FLAGS.DEFER | RIO_SEND_FLAGS.DONT_NOTIFY;
         const RIO_SEND_FLAGS MessageEnd = RIO_SEND_FLAGS.NONE;
 
-        public void SendQueue(ArraySegment<byte> buffer, CancellationToken cancellationToken)
+        public void SendQueue(ArraySegment<byte> buffer)
         {
             var count = buffer.Count;
             var offset = buffer.Offset;
 
             var requestId = Interlocked.Increment(ref _sendCount);
 
-            while (count > 0 && !cancellationToken.IsCancellationRequested)
+            while (count > 0)
             {
                 var segment = _wb.bufferPool.GetBuffer();
 
@@ -189,6 +189,14 @@ namespace NativeRIOHttpServer.RegisteredIO
                 var type = (count > 0 ? MessagePart : MessageEnd);
                 _rio.Send(_requestQueue, ref segment.RioBuffer, 1, type, -segment.PoolIndex);
             }
+        }
+        public void SendCachedOk()
+        {
+            _rio.Send(_requestQueue, ref _wb.cachedOK, 1, MessageEnd, RIO.CachedValue);
+        }
+        public void SendCachedBusy()
+        {
+            _rio.Send(_requestQueue, ref _wb.cachedBusy, 1, MessageEnd, RIO.CachedValue);
         }
 
         ReceiveTask _receiveTask;

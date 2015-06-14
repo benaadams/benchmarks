@@ -5,6 +5,7 @@ using System;
 using System.Collections.Concurrent;
 using System.Runtime.InteropServices;
 using System.Security;
+using System.Text;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -20,6 +21,8 @@ namespace NativeRIOHttpServer.RegisteredIO
         public Thread thread;
 
         public RIOBufferPool bufferPool;
+        public RIO_BUFSEGMENT cachedOK;
+        public RIO_BUFSEGMENT cachedBusy;
     }
 
     internal class RIOThreadPool
@@ -113,6 +116,26 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         }
 
+        static readonly string okResponseStr = "HTTP/1.1 200 OK\r\n" +
+            "Content-Type: text/plain;charset=UTF-8\r\n" +
+            "Content-Length: 10\r\n" +
+            "Connection: keep-alive\r\n" +
+            "Server: -RIO-\r\n" +
+            "\r\n" +
+            "HelloWorld";
+
+        private static byte[] _okResponseBytes = Encoding.UTF8.GetBytes(okResponseStr);
+
+        static readonly string busyResponseStr = "HTTP/1.1 503 Service Unavailable\r\n" +
+            "Content-Type: text/plain;charset=UTF-8\r\n" +
+            "Content-Length: 4\r\n" +
+            "Connection: keep-alive\r\n" +
+            "Server: -RIO-\r\n" +
+            "\r\n" +
+            "Busy";
+
+        private static byte[] _busyResponseBytes = Encoding.UTF8.GetBytes(busyResponseStr);
+
         const int maxResults = 512;
         private unsafe void Process(int id)
         {
@@ -123,6 +146,15 @@ namespace NativeRIOHttpServer.RegisteredIO
             var worker = _workers[id];
             var completionPort = worker.completionPort;
             var cq = worker.completionQueue;
+
+            PooledSegment cachedOKBuffer = worker.bufferPool.GetBuffer();
+            worker.cachedOK = cachedOKBuffer.RioBuffer;
+            Buffer.BlockCopy(_okResponseBytes, 0, cachedOKBuffer.Buffer, cachedOKBuffer.Offset, _okResponseBytes.Length);
+            cachedOKBuffer.RioBuffer.Length = (uint)_okResponseBytes.Length;
+            PooledSegment cachedBusyBuffer = worker.bufferPool.GetBuffer();
+            worker.cachedBusy = cachedBusyBuffer.RioBuffer;
+            Buffer.BlockCopy(_busyResponseBytes, 0, cachedBusyBuffer.Buffer, cachedBusyBuffer.Offset, _busyResponseBytes.Length);
+            cachedBusyBuffer.RioBuffer.Length = (uint)_busyResponseBytes.Length;
 
             uint count;
             int ret;
@@ -137,7 +169,11 @@ namespace NativeRIOHttpServer.RegisteredIO
                     for (var i = 0; i < count; i++)
                     {
                         result = results[i];
-                        if (result.RequestCorrelation < 1)
+                        if (result.RequestCorrelation == RIO.CachedValue)
+                        {
+                            // cached response, don't release buffer
+                        }
+                        else if (result.RequestCorrelation < 1)
                         {
                             worker.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
                         }
@@ -161,7 +197,8 @@ namespace NativeRIOHttpServer.RegisteredIO
                     }
                 }
             }
-
+            cachedOKBuffer.Dispose();
+            cachedBusyBuffer.Dispose();
         }
 
         const string Kernel_32 = "Kernel32";

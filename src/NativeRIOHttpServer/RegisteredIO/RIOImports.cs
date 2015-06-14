@@ -28,6 +28,8 @@ namespace NativeRIOHttpServer.RegisteredIO
         public RIOImports.RIOResizeRequestQueue ResizeRequestQueue;
 
 
+        public const long CachedValue = long.MinValue;
+
         public RIO()
         {
         }
