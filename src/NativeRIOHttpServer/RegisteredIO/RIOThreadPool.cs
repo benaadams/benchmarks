@@ -151,13 +151,14 @@ namespace NativeRIOHttpServer.RegisteredIO
             var cq = worker.completionQueue;
 
             PooledSegment cachedOKBuffer = worker.bufferPool.GetBuffer();
-            worker.cachedOK = cachedOKBuffer.RioBuffer;
             Buffer.BlockCopy(_okResponseBytes, 0, cachedOKBuffer.Buffer, cachedOKBuffer.Offset, _okResponseBytes.Length);
             cachedOKBuffer.RioBuffer.Length = (uint)_okResponseBytes.Length;
+            worker.cachedOK = cachedOKBuffer.RioBuffer;
+
             PooledSegment cachedBusyBuffer = worker.bufferPool.GetBuffer();
-            worker.cachedBusy = cachedBusyBuffer.RioBuffer;
             Buffer.BlockCopy(_busyResponseBytes, 0, cachedBusyBuffer.Buffer, cachedBusyBuffer.Offset, _busyResponseBytes.Length);
             cachedBusyBuffer.RioBuffer.Length = (uint)_busyResponseBytes.Length;
+            worker.cachedBusy = cachedBusyBuffer.RioBuffer;
 
             uint count;
             int ret;
