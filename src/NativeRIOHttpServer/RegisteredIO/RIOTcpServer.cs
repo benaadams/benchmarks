@@ -147,7 +147,7 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         ReceiveTask[] _receiveTasks;
         ArraySegment<byte>[] _receiveRequestBuffers;
-        public const int MaxPendingReceives = 64;
+        public const int MaxPendingReceives = 32;
         public const int MaxPendingSends = MaxPendingReceives * 2;
         const int ReceiveMask = MaxPendingReceives - 1;
 

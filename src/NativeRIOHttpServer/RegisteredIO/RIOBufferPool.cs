@@ -42,7 +42,7 @@ namespace NativeRIOHttpServer.RegisteredIO
         RIO_BUFSEGMENT[] _segments;
         private byte[] _underlyingBuffer;
         public const int PacketSize = 1500 - (20 + 60); // MTU - (IP Header + TCP Header)
-        private const int PerAllocationCount = 8192 * 8;
+        private const int PerAllocationCount = 8192 * 4;
         private const int BufferLength = PacketSize * PerAllocationCount; // Amount to pin per alloc 9.4 MB ish; into LOH
 
         private ConcurrentQueue<int> _availableSegments;
