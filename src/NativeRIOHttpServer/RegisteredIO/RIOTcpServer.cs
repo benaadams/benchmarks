@@ -144,12 +144,15 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         long _sendCount = 0;
         long _receiveRequestCount = 0;
+        DateTime _lastSend;
 
         ReceiveTask[] _receiveTasks;
+        PooledSegment[] _sendSegments;
         ArraySegment<byte>[] _receiveRequestBuffers;
         public const int MaxPendingReceives = 32;
         public const int MaxPendingSends = MaxPendingReceives * 2;
         const int ReceiveMask = MaxPendingReceives - 1;
+        const int SendMask = MaxPendingSends - 1;
 
         internal TcpConnection(IntPtr socket, long connectionId, WorkBundle wb, RIO rio)
         {
@@ -173,52 +176,69 @@ namespace NativeRIOHttpServer.RegisteredIO
             {
                 _receiveTasks[i] = new ReceiveTask(this, wb.bufferPool.GetBuffer());
             }
+
+            _sendSegments = new PooledSegment[MaxPendingSends];
+            for (var i = 0; i < _sendSegments.Length; i++)
+            {
+                _sendSegments[i] = wb.bufferPool.GetBuffer();
+            }
+
             wb.connections.TryAdd(connectionId, this);
             
             for (var i = 0; i < _receiveTasks.Length; i++)
             {
                 PostReceive( i );
             }
+            _lastSend = DateTime.UtcNow;
         }
 
         const RIO_SEND_FLAGS MessagePart = RIO_SEND_FLAGS.DEFER | RIO_SEND_FLAGS.DONT_NOTIFY;
         const RIO_SEND_FLAGS MessageEnd = RIO_SEND_FLAGS.NONE;
 
-        public void SendQueue(ArraySegment<byte> buffer)
+        int _currentOffset = 0;
+        public void QueueSend(ArraySegment<byte> buffer)
         {
+            var segment = _sendSegments[_sendCount & SendMask];
             var count = buffer.Count;
             var offset = buffer.Offset;
 
-            var requestId = Interlocked.Increment(ref _sendCount);
-
             while (count > 0)
             {
-                var segment = _wb.bufferPool.GetBuffer();
+                var length = (count >= RIOBufferPool.PacketSize ? RIOBufferPool.PacketSize : count) - _currentOffset;
+                Buffer.BlockCopy(buffer.Array, offset, segment.Buffer, segment.Offset + _currentOffset, length);
 
-                var length = count >= RIOBufferPool.PacketSize ? RIOBufferPool.PacketSize : count;
-
-                Buffer.BlockCopy(buffer.Array, offset, segment.Buffer, segment.Offset, length);
-
+                if (_currentOffset == RIOBufferPool.PacketSize)
+                {
+                    segment.RioBuffer.Length = RIOBufferPool.PacketSize;
+                    _rio.Send(_requestQueue, &segment.RioBuffer, 1, MessageEnd, -_sendCount -1);
+                    _currentOffset = 0;
+                    _sendCount++;
+                    segment = _sendSegments[_sendCount & SendMask];
+                    _lastSend = DateTime.UtcNow;
+                }
+                else if (_currentOffset > RIOBufferPool.PacketSize)
+                {
+                    throw new Exception("Overflowed buffer");
+                }
+                else
+                {
+                    _currentOffset += length;
+                }
                 offset += length;
                 count -= length;
-                segment.RioBuffer.Length = (uint)length;
+            }
+        }
 
-                var type = (count > 0 ? MessagePart : MessageEnd);
-                _rio.Send(_requestQueue, &segment.RioBuffer, 1, type, -segment.PoolIndex);
-            }
-        }
-        public void SendCachedOk()
+        public void TriggerSend()
         {
-            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedOK)
+            if (_currentOffset > 0 && (DateTime.UtcNow - _lastSend).TotalMilliseconds > 200)
             {
-                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
-            }
-        }
-        public void SendCachedBusy()
-        {
-            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedBusy)
-            {
-                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
+                var segment = _sendSegments[_sendCount & SendMask];
+                segment.RioBuffer.Length = (uint)_currentOffset;
+                _rio.Send(_requestQueue, &segment.RioBuffer, 1, MessageEnd, -_sendCount -1);
+                _lastSend = DateTime.UtcNow;
+                _currentOffset = 0;
+                _sendCount++;
             }
         }
 
@@ -262,12 +282,18 @@ namespace NativeRIOHttpServer.RegisteredIO
                 // Makes it unhappy
                 // _rio.CloseCompletionQueue(_requestQueue);
 
+                TcpConnection connection;
+                _wb.connections.TryRemove(_connectionId, out connection);
+                RIOImports.closesocket(_socket);
                 for (var i = 0; i < _receiveTasks.Length; i++)
                 {
                     _receiveTasks[i].Dispose();
                 }
 
-                RIOImports.closesocket(_socket);
+                for (var i = 0; i < _sendSegments.Length; i++)
+                {
+                    _sendSegments[i].Dispose();
+                }
 
                 disposedValue = true;
             }

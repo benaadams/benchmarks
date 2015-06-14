@@ -166,10 +166,11 @@ namespace NativeRIOHttpServer.RegisteredIO
             while (!_token.IsCancellationRequested)
             {
                 _rio.Notify(cq);
-                var sucess = GetQueuedCompletionStatus(completionPort, out bytes, out key, out overlapped, -1);
+                var sucess = GetQueuedCompletionStatus(completionPort, out bytes, out key, out overlapped, 100);
                 if (sucess)
                 {
                     count = _rio.DequeueCompletion(cq, (IntPtr)results, maxResults);
+                    ret = _rio.Notify(cq);
                     for (var i = 0; i < count; i++)
                     {
                         result = results[i];
@@ -181,7 +182,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                         {
                             // first send 2 buffers are cached responses
                             // so should next have a 0 for a send
-                            worker.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
+                            //worker.bufferPool.ReleaseBuffer((int)-result.RequestCorrelation);
                         }
                         else
                         {
@@ -193,7 +194,7 @@ namespace NativeRIOHttpServer.RegisteredIO
                             }
                         }
                     }
-                    ret = _rio.Notify(cq);
+                    ProcessDelayed(worker.connections);
                 }
                 else
                 {
@@ -202,10 +203,22 @@ namespace NativeRIOHttpServer.RegisteredIO
                     {
                         throw new Exception(String.Format("ERROR: GetQueuedCompletionStatusEx returned {0}", error));
                     }
+                    else
+                    {
+                        ProcessDelayed(worker.connections);
+                    }
                 }
             }
             cachedOKBuffer.Dispose();
             cachedBusyBuffer.Dispose();
+        }
+
+        public void ProcessDelayed(ConcurrentDictionary<long, TcpConnection> connections)
+        {
+            foreach (var entry in connections)
+            {
+                entry.Value.TriggerSend();
+            }
         }
 
         const string Kernel_32 = "Kernel32";
