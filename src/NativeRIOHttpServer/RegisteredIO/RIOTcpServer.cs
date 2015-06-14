@@ -204,16 +204,22 @@ namespace NativeRIOHttpServer.RegisteredIO
                 segment.RioBuffer.Length = (uint)length;
 
                 var type = (count > 0 ? MessagePart : MessageEnd);
-                _rio.Send(_requestQueue, ref segment.RioBuffer, 1, type, -segment.PoolIndex);
+                _rio.Send(_requestQueue, &segment.RioBuffer, 1, type, -segment.PoolIndex);
             }
         }
         public void SendCachedOk()
         {
-            _rio.Send(_requestQueue, ref _wb.cachedOK, 1, MessageEnd, RIO.CachedValue);
+            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedOK)
+            {
+                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
+            }
         }
         public void SendCachedBusy()
         {
-            _rio.Send(_requestQueue, ref _wb.cachedBusy, 1, MessageEnd, RIO.CachedValue);
+            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedBusy)
+            {
+                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
+            }
         }
 
         public void CompleteReceive(long RequestCorrelation, uint BytesTransferred)
