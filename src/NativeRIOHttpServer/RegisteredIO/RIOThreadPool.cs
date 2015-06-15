@@ -166,7 +166,7 @@ namespace NativeRIOHttpServer.RegisteredIO
             while (!_token.IsCancellationRequested)
             {
                 _rio.Notify(cq);
-                var sucess = GetQueuedCompletionStatus(completionPort, out bytes, out key, out overlapped, 100);
+                var sucess = GetQueuedCompletionStatus(completionPort, out bytes, out key, out overlapped, -1);
                 if (sucess)
                 {
                     count = _rio.DequeueCompletion(cq, (IntPtr)results, maxResults);
@@ -194,7 +194,6 @@ namespace NativeRIOHttpServer.RegisteredIO
                             }
                         }
                     }
-                    ProcessDelayed(worker.connections);
                 }
                 else
                 {
@@ -203,22 +202,10 @@ namespace NativeRIOHttpServer.RegisteredIO
                     {
                         throw new Exception(String.Format("ERROR: GetQueuedCompletionStatusEx returned {0}", error));
                     }
-                    else
-                    {
-                        ProcessDelayed(worker.connections);
-                    }
                 }
             }
             cachedOKBuffer.Dispose();
             cachedBusyBuffer.Dispose();
-        }
-
-        public void ProcessDelayed(ConcurrentDictionary<long, TcpConnection> connections)
-        {
-            foreach (var entry in connections)
-            {
-                entry.Value.TriggerSend();
-            }
         }
 
         const string Kernel_32 = "Kernel32";

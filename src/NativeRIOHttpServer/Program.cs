@@ -40,29 +40,43 @@ namespace NativeRIOHttpServer
             try
             {
                 //var x = 0;
-                var buffer = new byte[2048];
                 var sendBuffer = new ArraySegment<byte>(_responseBytes,0, _responseBytes.Length);
-                var receiveBuffer = new ArraySegment<byte>(buffer, 0, buffer.Length);
+                var buffer0 = new byte[2048];
+                var buffer1 = new byte[2048];
+                var receiveBuffer0 = new ArraySegment<byte>(buffer0, 0, buffer0.Length);
+                var receiveBuffer1 = new ArraySegment<byte>(buffer1, 0, buffer1.Length);
 
-                var receiveTask = socket.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                var receiveTask = socket.ReceiveAsync(receiveBuffer0, CancellationToken.None);
+
+                var loop = 0;
 
                 while (true)
                 {
                     uint r = await receiveTask;
-                    receiveTask = socket.ReceiveAsync(receiveBuffer, CancellationToken.None);
+                    receiveTask = socket.ReceiveAsync((loop & 1) == 1 ? receiveBuffer0 : receiveBuffer1, CancellationToken.None);
 
                     if (r == 0)
                     {
                         break;
                     }
 
-                    //for (int i = 0; i < r; i++)
-                    //{
-                    //    x += buffer[i];
-                    //}
-
-                    socket.QueueSend(sendBuffer);
-                    //socket.SendCachedOk();
+                    var buffer = (loop & 1) == 0 ? buffer0 : buffer1;
+                    var count = 0;
+                    r -= 3;
+                    for  (var i = 0; i < r; i++)
+                    {
+                        if (buffer[i] == 0xd && buffer[i] == 0xa && buffer[i] == 0xd && buffer[i] == 0xa)
+                        {
+                            count++;
+                        }
+                    }
+                    
+                    for (var i = 1; i < count; i++)
+                    {
+                        socket.QueueSend(sendBuffer, false);
+                    }
+                    socket.QueueSend(sendBuffer, true);
+                    loop++;
                 }
             }
             catch (Exception ex)

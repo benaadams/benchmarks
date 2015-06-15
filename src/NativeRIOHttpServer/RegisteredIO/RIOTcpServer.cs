@@ -144,7 +144,6 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         long _sendCount = 0;
         long _receiveRequestCount = 0;
-        DateTime _lastSend;
 
         ReceiveTask[] _receiveTasks;
         PooledSegment[] _sendSegments;
@@ -189,14 +188,13 @@ namespace NativeRIOHttpServer.RegisteredIO
             {
                 PostReceive( i );
             }
-            _lastSend = DateTime.UtcNow;
         }
 
         const RIO_SEND_FLAGS MessagePart = RIO_SEND_FLAGS.DEFER | RIO_SEND_FLAGS.DONT_NOTIFY;
         const RIO_SEND_FLAGS MessageEnd = RIO_SEND_FLAGS.NONE;
 
         int _currentOffset = 0;
-        public void QueueSend(ArraySegment<byte> buffer)
+        public void QueueSend(ArraySegment<byte> buffer, bool isEnd)
         {
             var segment = _sendSegments[_sendCount & SendMask];
             var count = buffer.Count;
@@ -204,7 +202,7 @@ namespace NativeRIOHttpServer.RegisteredIO
 
             while (count > 0)
             {
-                var length = (count >= RIOBufferPool.PacketSize ? RIOBufferPool.PacketSize : count) - _currentOffset;
+                var length = count >= RIOBufferPool.PacketSize - _currentOffset ? RIOBufferPool.PacketSize - _currentOffset : count;
                 Buffer.BlockCopy(buffer.Array, offset, segment.Buffer, segment.Offset + _currentOffset, length);
 
                 if (_currentOffset == RIOBufferPool.PacketSize)
@@ -214,7 +212,6 @@ namespace NativeRIOHttpServer.RegisteredIO
                     _currentOffset = 0;
                     _sendCount++;
                     segment = _sendSegments[_sendCount & SendMask];
-                    _lastSend = DateTime.UtcNow;
                 }
                 else if (_currentOffset > RIOBufferPool.PacketSize)
                 {
@@ -227,18 +224,21 @@ namespace NativeRIOHttpServer.RegisteredIO
                 offset += length;
                 count -= length;
             }
-        }
-
-        public void TriggerSend()
-        {
-            if (_currentOffset > 0 && (DateTime.UtcNow - _lastSend).TotalMilliseconds > 200)
+            if (isEnd)
             {
-                var segment = _sendSegments[_sendCount & SendMask];
-                segment.RioBuffer.Length = (uint)_currentOffset;
-                _rio.Send(_requestQueue, &segment.RioBuffer, 1, MessageEnd, -_sendCount -1);
-                _lastSend = DateTime.UtcNow;
-                _currentOffset = 0;
-                _sendCount++;
+                if (_currentOffset > 0)
+                {
+                    segment.RioBuffer.Length = (uint)_currentOffset;
+                    _rio.Send(_requestQueue, &segment.RioBuffer, 1, MessageEnd, -_sendCount - 1);
+                    _currentOffset = 0;
+                    _sendCount++;
+                }
+                else
+                {
+                    _rio.Send(_requestQueue, null, 1, RIO_SEND_FLAGS.COMMIT_ONLY, 0);
+                    _currentOffset = 0;
+                    _sendCount++;
+                }
             }
         }
 
