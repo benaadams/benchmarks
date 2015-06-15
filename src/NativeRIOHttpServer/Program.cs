@@ -52,7 +52,7 @@ namespace NativeRIOHttpServer
 
                 while (true)
                 {
-                    uint r = await receiveTask;
+                    int r = (int)await receiveTask;
                     receiveTask = socket.ReceiveAsync((loop & 1) == 1 ? receiveBuffer0 : receiveBuffer1, CancellationToken.None);
 
                     if (r == 0)
@@ -63,12 +63,19 @@ namespace NativeRIOHttpServer
                     var buffer = (loop & 1) == 0 ? buffer0 : buffer1;
                     var count = 0;
                     r -= 3;
-                    for  (var i = 0; i < r; i++)
+                    if (r > 4)
                     {
-                        if (buffer[i] == 0xd && buffer[i + 1] == 0xa && buffer[i + 2] == 0xd && buffer[i + 3] == 0xa)
+                        for (var i = 0; i < r; i++)
                         {
-                            count++;
+                            if (buffer[i] == 0xd && buffer[i + 1] == 0xa && buffer[i + 2] == 0xd && buffer[i + 3] == 0xa)
+                            {
+                                count++;
+                            }
                         }
+                    }
+                    else
+                    {
+                        count = 1;
                     }
 
                     if (count == 1)
