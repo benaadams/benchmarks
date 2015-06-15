@@ -241,6 +241,20 @@ namespace NativeRIOHttpServer.RegisteredIO
                 }
             }
         }
+        public void SendCachedOk()
+        {
+            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedOK)
+            {
+                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
+            }
+        }
+        public void SendCachedBusy()
+        {
+            fixed (RIO_BUFSEGMENT* pSeg = &_wb.cachedBusy)
+            {
+                _rio.Send(_requestQueue, pSeg, 1, MessageEnd, RIO.CachedValue);
+            }
+        }
 
         public void CompleteReceive(long RequestCorrelation, uint BytesTransferred)
         {

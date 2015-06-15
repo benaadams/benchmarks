@@ -65,17 +65,24 @@ namespace NativeRIOHttpServer
                     r -= 3;
                     for  (var i = 0; i < r; i++)
                     {
-                        if (buffer[i] == 0xd && buffer[i] == 0xa && buffer[i] == 0xd && buffer[i] == 0xa)
+                        if (buffer[i] == 0xd && buffer[i + 1] == 0xa && buffer[i + 2] == 0xd && buffer[i + 3] == 0xa)
                         {
                             count++;
                         }
                     }
-                    
-                    for (var i = 1; i < count; i++)
+
+                    if (count == 1)
                     {
-                        socket.QueueSend(sendBuffer, false);
+                        socket.SendCachedOk();
                     }
-                    socket.QueueSend(sendBuffer, true);
+                    else
+                    {
+                        for (var i = 1; i < count; i++)
+                        {
+                            socket.QueueSend(sendBuffer, false);
+                        }
+                        socket.QueueSend(sendBuffer, true);
+                    }
                     loop++;
                 }
             }
