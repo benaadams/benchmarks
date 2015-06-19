@@ -66,19 +66,19 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate void RIODeregisterBuffer([In] IntPtr BufferId);
-        
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public unsafe delegate bool RIOSend([In] IntPtr SocketQueue, [In] RIO_BUFSEGMENT* RioBuffer, [In] UInt32 DataBufferCount, [In] RIO_SEND_FLAGS Flags, [In] long RequestCorrelation);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate bool RIOReceive([In] IntPtr SocketQueue, [In] ref RIO_BUFSEGMENT RioBuffer, [In] UInt32 DataBufferCount, [In] RIO_RECEIVE_FLAGS Flags, [In] long RequestCorrelation);
-        
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate IntPtr RIOCreateCompletionQueue([In] uint QueueSize, [In] RIO_NOTIFICATION_COMPLETION NotificationCompletion);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate void RIOCloseCompletionQueue([In] IntPtr CQ);
-        
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate IntPtr RIOCreateRequestQueue(
                                       [In] IntPtr Socket,
@@ -93,22 +93,28 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate uint RIODequeueCompletion([In] IntPtr CQ, [In] IntPtr ResultArray, [In] uint ResultArrayLength);
-        
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate Int32 RIONotify([In] IntPtr CQ);
-        
+
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate bool RIOResizeCompletionQueue([In] IntPtr CQ, [In] UInt32 QueueSize);
 
         [UnmanagedFunctionPointer(CallingConvention.StdCall, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public delegate bool RIOResizeRequestQueue([In] IntPtr RQ, [In] UInt32 MaxOutstandingReceive, [In] UInt32 MaxOutstandingSend);
-        
+
         const uint IOC_OUT = 0x40000000;
         const uint IOC_IN = 0x80000000;
         const uint IOC_INOUT = IOC_IN | IOC_OUT;
         const uint IOC_WS2 = 0x08000000;
+        const uint IOC_VENDOR = 0x18000000;
         const uint SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER = IOC_INOUT | IOC_WS2 | 36;
-        
+          
+        const int SIO_LOOPBACK_FAST_PATH =  -1744830448;// IOC_IN | IOC_WS2 | 16;
+    
+        const int TCP_NODELAY = 0x0001;
+        const int IPPROTO_TCP = 6;
+
         public unsafe static RIO Initalize(IntPtr socket)
         {
 
@@ -116,7 +122,29 @@ namespace NativeRIOHttpServer.RegisteredIO
             RIO_EXTENSION_FUNCTION_TABLE rio = new RIO_EXTENSION_FUNCTION_TABLE();
             Guid RioFunctionsTableId = new Guid("8509e081-96dd-4005-b165-9e2ee8c79e3f");
 
-            int result = WSAIoctl(socket, SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER,
+
+            int True = -1;
+
+            int result = setsockopt(socket, IPPROTO_TCP, TCP_NODELAY, (char*)&True, 4);
+            if (result != 0)
+            {
+                var error = RIOImports.WSAGetLastError();
+                RIOImports.WSACleanup();
+                throw new Exception(String.Format("ERROR: setsockopt TCP_NODELAY returned {0}", error));
+            }
+
+            result = WSAIoctlGeneral(socket, SIO_LOOPBACK_FAST_PATH, 
+                                &True, 4, null, 0,
+                                out dwBytes, IntPtr.Zero, IntPtr.Zero);
+
+            if (result != 0)
+            {
+                var error = RIOImports.WSAGetLastError();
+                RIOImports.WSACleanup();
+                throw new Exception(String.Format("ERROR: WSAIoctl SIO_LOOPBACK_FAST_PATH returned {0}", error));
+            }
+
+            result = WSAIoctl(socket, SIO_GET_MULTIPLE_EXTENSION_FUNCTION_POINTER,
                ref RioFunctionsTableId, 16, ref rio,
                sizeof(RIO_EXTENSION_FUNCTION_TABLE),
                out dwBytes, IntPtr.Zero, IntPtr.Zero);
@@ -165,6 +193,19 @@ namespace NativeRIOHttpServer.RegisteredIO
           [In] IntPtr lpCompletionRoutine
         );
 
+        [DllImport(WS2_32, SetLastError = true, EntryPoint = "WSAIoctl"), SuppressUnmanagedCodeSecurity]
+        private unsafe static extern int WSAIoctlGeneral(
+          [In] IntPtr socket,
+          [In] int dwIoControlCode,
+          [In] int* lpvInBuffer,
+          [In] uint cbInBuffer,
+          [In] int* lpvOutBuffer,
+          [In] int cbOutBuffer,
+          [Out] out uint lpcbBytesReturned,
+          [In] IntPtr lpOverlapped,
+          [In] IntPtr lpCompletionRoutine
+        );
+
         [DllImport(WS2_32, SetLastError = true, CharSet = CharSet.Ansi, BestFitMapping = true, ThrowOnUnmappableChar = true), SuppressUnmanagedCodeSecurity]
         internal static extern SocketError WSAStartup([In] short wVersionRequested, [Out] out WSAData lpWSAData );
 
@@ -179,6 +220,9 @@ namespace NativeRIOHttpServer.RegisteredIO
 
         [DllImport(WS2_32, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public static extern int listen(IntPtr s, int backlog);
+
+        [DllImport(WS2_32, SetLastError = true), SuppressUnmanagedCodeSecurity]
+        public unsafe static extern int setsockopt(IntPtr s, int level, int optname, char* optval, int optlen);
 
         [DllImport(WS2_32, SetLastError = true), SuppressUnmanagedCodeSecurity]
         public static extern IntPtr accept(IntPtr s, IntPtr addr, int addrlen);

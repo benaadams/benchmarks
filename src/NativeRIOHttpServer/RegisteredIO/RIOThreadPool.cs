@@ -94,9 +94,9 @@ namespace NativeRIOHttpServer.RegisteredIO
             }
 
             // gc
-            GC.Collect(2, GCCollectionMode.Forced, true, true);
-            GC.WaitForPendingFinalizers();
-            GC.Collect(2, GCCollectionMode.Forced, true, true);
+            //GC.Collect(2, GCCollectionMode.Forced, true, true);
+            //GC.WaitForPendingFinalizers();
+            //GC.Collect(2, GCCollectionMode.Forced, true, true);
 
             for (var i = 0; i < _workers.Length; i++)
             {
