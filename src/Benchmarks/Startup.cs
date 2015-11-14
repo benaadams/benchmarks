@@ -2,12 +2,10 @@
 // Licensed under the Apache License, Version 2.0. See License.txt in the project root for license information. 
 
 using System;
-using Benchmarks.Data;
 using Microsoft.AspNet.Builder;
 using Microsoft.AspNet.Hosting;
 using Microsoft.AspNet.Http;
 using Microsoft.AspNet.Server.Kestrel;
-using Microsoft.Data.Entity;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 
@@ -34,12 +32,7 @@ namespace Benchmarks
             // No scenarios covered by the benchmarks require the HttpContextAccessor so we're replacing it with a
             // no-op version to avoid the cost.
             services.AddSingleton(typeof(IHttpContextAccessor), typeof(InertHttpContextAccessor));
-
-            services.AddSingleton<ApplicationDbSeeder>();
-            services.AddEntityFramework()
-                .AddSqlServer()
-                .AddDbContext<ApplicationDbContext>(options =>
-                    options.UseSqlServer(Configuration["Data:DefaultConnection:ConnectionString"]));
+            
 
             services.AddMvc();
         }
@@ -58,15 +51,10 @@ namespace Benchmarks
             app.UseErrorHandler();
             app.UsePlainText();
             app.UseJson();
-            app.UseSingleQueryRaw(Configuration["Data:DefaultConnection:ConnectionString"]);
-            app.UseSingleQueryEf();
             app.UseMvc();
 
             app.Run(context => context.Response.WriteAsync("Try /plaintext instead"));
-
-            var dbContext = (ApplicationDbContext)app.ApplicationServices.GetService(typeof(ApplicationDbContext));
-            var seeder = (ApplicationDbSeeder)app.ApplicationServices.GetService(typeof(ApplicationDbSeeder));
-            seeder.Seed(dbContext);
+            
         }
         
         public class InertHttpContextAccessor : IHttpContextAccessor
