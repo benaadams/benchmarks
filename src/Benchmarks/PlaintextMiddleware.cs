@@ -23,7 +23,6 @@ namespace Benchmarks
 
         public Task Invoke(HttpContext httpContext)
         {
-            // We check Ordinal explicitly first because it's faster than OrdinalIgnoreCase
             if (httpContext.Request.Path.StartsWithSegments(_path, StringComparison.Ordinal))
             {
                 httpContext.Response.StatusCode = 200;
